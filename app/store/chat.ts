@@ -117,6 +117,8 @@ function createEmptySession(): ChatSession {
     lastSummarizeIndex: 0,
 
     mask: createEmptyMask(),
+    // 默认使用百炼智能体
+    agentId: "default",
   };
 }
 
@@ -249,6 +251,8 @@ export const useChatStore = createPersistStore(
         const newSession = createEmptySession();
 
         newSession.topic = currentSession.topic;
+        // 保留原会话的智能体ID
+        newSession.agentId = currentSession.agentId;
         // 深拷贝消息
         newSession.messages = currentSession.messages.map((msg) => ({
           ...msg,
@@ -337,12 +341,15 @@ export const useChatStore = createPersistStore(
           sessions: [session].concat(state.sessions),
         }));
 
-        // 创建后端对话记录
-        get().createBackendConversation(session);
+        // 创建后端对话记录，等待完成以确保 session.id 被正确设置
+        await get().createBackendConversation(session);
       },
 
       async createBackendConversation(session: ChatSession) {
         try {
+          console.log("[CreateBackendConversation] 开始创建对话...");
+          console.log("[CreateBackendConversation] agentId:", session.agentId);
+
           const response = await fetch("/api/conversations", {
             method: "POST",
             headers: {
@@ -358,12 +365,30 @@ export const useChatStore = createPersistStore(
           if (response.ok) {
             const result = await response.json();
             if (result.success && result.data.id) {
+              console.log(
+                "[CreateBackendConversation] 后端返回 ID:",
+                result.data.id,
+              );
+
               // 更新 session 的 id 为后端返回的 id
               session.id = result.data.id;
+
+              // 触发 state 更新以确保 UI 能感知到变化
+              set((state) => ({
+                sessions: [...state.sessions],
+              }));
+
+              console.log(
+                "[CreateBackendConversation] 对话创建成功，ID:",
+                session.id,
+              );
             }
+          } else {
+            const errorData = await response.json();
+            console.error("[CreateBackendConversation] 创建失败:", errorData);
           }
         } catch (error) {
-          console.error("创建后端对话失败:", error);
+          console.error("[CreateBackendConversation] 创建后端对话失败:", error);
         }
       },
 
@@ -458,6 +483,14 @@ export const useChatStore = createPersistStore(
         // 检查是否使用阿里云百炼智能体
         if (session.agentId !== undefined && session.agentId !== null) {
           console.log("[OnUserInput] 使用智能体，调用 DashScope");
+
+          // 如果是第一次使用这个会话（消息数为0），需要先创建后端对话记录
+          if (session.messages.length === 0) {
+            console.log("[OnUserInput] 首次使用会话，创建后端对话记录...");
+            await get().createBackendConversation(session);
+            console.log("[OnUserInput] 后端对话记录创建完成，ID:", session.id);
+          }
+
           return get().sendToDashScope(content, session);
         }
 
@@ -1083,7 +1116,7 @@ export const useChatStore = createPersistStore(
   },
   {
     name: StoreKey.Chat,
-    version: 3.3,
+    version: 3.4,
     migrate(persistedState, version) {
       const state = persistedState as any;
       const newState = JSON.parse(
@@ -1145,6 +1178,15 @@ export const useChatStore = createPersistStore(
           const config = useAppConfig.getState();
           s.mask.modelConfig.compressModel = "";
           s.mask.modelConfig.compressProviderName = "";
+        });
+      }
+
+      // 设置所有会话默认使用百炼智能体
+      if (version < 3.4) {
+        newState.sessions.forEach((s) => {
+          if (!s.agentId) {
+            s.agentId = "default";
+          }
         });
       }
 

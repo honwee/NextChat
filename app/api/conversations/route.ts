@@ -27,10 +27,22 @@ export const POST = withAuth(async (request: NextRequest, { user }) => {
       );
     }
 
+    // 处理 agentId - 如果是 "default" 或无效 UUID，使用 null
+    let agentId = body.agentId;
+    if (
+      agentId === "default" ||
+      !agentId ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        agentId,
+      )
+    ) {
+      agentId = null;
+    }
+
     // 创建对话
     const conversation = await db.createConversation({
       user_id: user.userId,
-      agent_id: body.agentId,
+      agent_id: agentId,
       title: body.title,
       model: body.model,
     });
