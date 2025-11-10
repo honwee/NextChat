@@ -1824,27 +1824,7 @@ export function Settings() {
           {saasStartComponent}
           {accessCodeComponent}
 
-          <ListItem
-            title="智能体选择"
-            subTitle="选择用于对话的阿里云百炼智能体"
-          >
-            <Select
-              aria-label="智能体选择"
-              value={agentStore.selectedAgentId || ""}
-              onChange={(e) => {
-                agentStore.selectAgent(e.target.value || null);
-              }}
-            >
-              <option value="">使用默认智能体</option>
-              {agentStore.agents
-                .filter((agent) => agent.is_active)
-                .map((agent) => (
-                  <option value={agent.id} key={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-            </Select>
-          </ListItem>
+          {/* 智能体选择已隐藏，固定使用面试训练智能体 */}
 
           {!accessStore.hideUserApiKey && (
             <>

@@ -25,12 +25,21 @@ interface AgentStore {
 export const useAgentStore = createPersistStore(
   {
     agents: [] as Agent[],
-    selectedAgentId: null as string | null,
+    // 固定使用默认智能体（环境变量中的 DASHSCOPE_APP_ID）
+    selectedAgentId: "default" as string | null,
     loading: false,
   },
   (set, get) => ({
     setAgents(agents: Agent[]) {
       set({ agents });
+
+      // 如果没有选中的智能体，自动选择第一个激活的智能体
+      if (!get().selectedAgentId && agents.length > 0) {
+        const firstActive = agents.find((a) => a.is_active);
+        if (firstActive) {
+          set({ selectedAgentId: firstActive.id });
+        }
+      }
     },
 
     selectAgent(agentId: string | null) {
@@ -52,7 +61,7 @@ export const useAgentStore = createPersistStore(
         if (response.ok) {
           const result = await response.json();
           if (result.success && result.data.agents) {
-            set({ agents: result.data.agents });
+            get().setAgents(result.data.agents);
           }
         }
       } catch (error) {
@@ -64,6 +73,6 @@ export const useAgentStore = createPersistStore(
   }),
   {
     name: "agent-store",
-    version: 1.0,
+    version: 1.1, // 升级版本以重置持久化数据
   },
 );
