@@ -50,30 +50,48 @@ export async function getCurrentUser(request: NextRequest): Promise<{
   feishuUserId: string;
   email?: string;
 } | null> {
+  console.log("[getCurrentUser] 开始验证用户");
+
   // 首先尝试从请求头中获取（由中间件设置）
   const userId = request.headers.get("x-user-id");
   const feishuUserId = request.headers.get("x-feishu-user-id");
 
   if (userId && feishuUserId) {
+    console.log("[getCurrentUser] 从请求头获取用户:", userId);
     return { userId, feishuUserId };
   }
 
   // 如果请求头中没有，尝试验证 Token
-  const cookieToken = extractTokenFromCookie(request.headers.get("cookie"));
+  const cookieHeader = request.headers.get("cookie");
+  console.log(
+    "[getCurrentUser] Cookie header:",
+    cookieHeader?.substring(0, 100),
+  );
+
+  const cookieToken = extractTokenFromCookie(cookieHeader);
+  console.log(
+    "[getCurrentUser] Extracted cookie token:",
+    cookieToken?.substring(0, 20) + "...",
+  );
+
   const headerToken = extractTokenFromHeader(
     request.headers.get("authorization"),
   );
   const token = cookieToken || headerToken;
 
   if (!token) {
+    console.log("[getCurrentUser] 未找到 token");
     return null;
   }
 
+  console.log("[getCurrentUser] 验证 token...");
   const payload = await verifySession(token);
   if (!payload) {
+    console.log("[getCurrentUser] Token 验证失败");
     return null;
   }
 
+  console.log("[getCurrentUser] 用户验证成功:", payload.userId);
   return {
     userId: payload.userId,
     feishuUserId: payload.feishuUserId,

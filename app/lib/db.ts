@@ -309,6 +309,19 @@ export class DatabaseService {
     }
   }
 
+  async getAdminByUserId(userId: string): Promise<Admin | null> {
+    try {
+      const result = await query<Admin>(
+        "SELECT * FROM admins WHERE user_id = $1",
+        [userId],
+      );
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error("获取管理员信息失败:", error);
+      return null;
+    }
+  }
+
   async addAdmin(
     userId: string,
     role: "admin" | "super_admin" = "admin",
@@ -323,6 +336,13 @@ export class DatabaseService {
       console.error("添加管理员失败:", error);
       return null;
     }
+  }
+
+  async createAdmin(
+    userId: string,
+    role: "admin" | "super_admin" = "admin",
+  ): Promise<Admin | null> {
+    return this.addAdmin(userId, role);
   }
 
   async removeAdmin(userId: string): Promise<boolean> {

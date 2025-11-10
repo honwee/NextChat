@@ -42,6 +42,7 @@ import {
   useAccessStore,
   useAppConfig,
 } from "../store";
+import { useAgentStore } from "../store/agent";
 
 import Locale, {
   AllLangs,
@@ -587,6 +588,8 @@ export function Settings() {
   const config = useAppConfig();
   const updateConfig = config.update;
 
+  const agentStore = useAgentStore();
+
   const updateStore = useUpdateStore();
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const currentVersion = updateStore.formatVersion(updateStore.version);
@@ -651,6 +654,8 @@ export function Settings() {
     // checks per minutes
     checkUpdate();
     showUsage && checkUsage();
+    // fetch agents
+    agentStore.fetchAgents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1459,44 +1464,44 @@ export function Settings() {
     </>
   );
 
-  const ai302ConfigComponent = accessStore.provider === ServiceProvider["302.AI"] && (
+  const ai302ConfigComponent = accessStore.provider ===
+    ServiceProvider["302.AI"] && (
     <>
       <ListItem
-          title={Locale.Settings.Access.AI302.Endpoint.Title}
-          subTitle={
-            Locale.Settings.Access.AI302.Endpoint.SubTitle +
-            AI302.ExampleEndpoint
+        title={Locale.Settings.Access.AI302.Endpoint.Title}
+        subTitle={
+          Locale.Settings.Access.AI302.Endpoint.SubTitle + AI302.ExampleEndpoint
+        }
+      >
+        <input
+          aria-label={Locale.Settings.Access.AI302.Endpoint.Title}
+          type="text"
+          value={accessStore.ai302Url}
+          placeholder={AI302.ExampleEndpoint}
+          onChange={(e) =>
+            accessStore.update(
+              (access) => (access.ai302Url = e.currentTarget.value),
+            )
           }
-        >
-          <input
-            aria-label={Locale.Settings.Access.AI302.Endpoint.Title}
-            type="text"
-            value={accessStore.ai302Url}
-            placeholder={AI302.ExampleEndpoint}
-            onChange={(e) =>
-              accessStore.update(
-                (access) => (access.ai302Url = e.currentTarget.value),
-              )
-            }
-          ></input>
-        </ListItem>
-        <ListItem
-          title={Locale.Settings.Access.AI302.ApiKey.Title}
-          subTitle={Locale.Settings.Access.AI302.ApiKey.SubTitle}
-        >
-          <PasswordInput
-            aria-label={Locale.Settings.Access.AI302.ApiKey.Title}
-            value={accessStore.ai302ApiKey}
-            type="text"
-            placeholder={Locale.Settings.Access.AI302.ApiKey.Placeholder}
-            onChange={(e) => {
-              accessStore.update(
-                (access) => (access.ai302ApiKey = e.currentTarget.value),
-              );
-            }}
-          />
-        </ListItem>
-      </>
+        ></input>
+      </ListItem>
+      <ListItem
+        title={Locale.Settings.Access.AI302.ApiKey.Title}
+        subTitle={Locale.Settings.Access.AI302.ApiKey.SubTitle}
+      >
+        <PasswordInput
+          aria-label={Locale.Settings.Access.AI302.ApiKey.Title}
+          value={accessStore.ai302ApiKey}
+          type="text"
+          placeholder={Locale.Settings.Access.AI302.ApiKey.Placeholder}
+          onChange={(e) => {
+            accessStore.update(
+              (access) => (access.ai302ApiKey = e.currentTarget.value),
+            );
+          }}
+        />
+      </ListItem>
+    </>
   );
 
   return (
@@ -1818,6 +1823,28 @@ export function Settings() {
         <List id={SlotID.CustomModel}>
           {saasStartComponent}
           {accessCodeComponent}
+
+          <ListItem
+            title="智能体选择"
+            subTitle="选择用于对话的阿里云百炼智能体"
+          >
+            <Select
+              aria-label="智能体选择"
+              value={agentStore.selectedAgentId || ""}
+              onChange={(e) => {
+                agentStore.selectAgent(e.target.value || null);
+              }}
+            >
+              <option value="">使用默认智能体</option>
+              {agentStore.agents
+                .filter((agent) => agent.is_active)
+                .map((agent) => (
+                  <option value={agent.id} key={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+            </Select>
+          </ListItem>
 
           {!accessStore.hideUserApiKey && (
             <>

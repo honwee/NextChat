@@ -93,6 +93,7 @@ export interface ChatSession {
   clearContextIndex?: number;
 
   mask: Mask;
+  agentId?: string | null; // 添加智能体 ID
 }
 
 export const DEFAULT_TOPIC = Locale.Store.DefaultTopic;
@@ -304,7 +305,7 @@ export const useChatStore = createPersistStore(
         });
       },
 
-      newSession(mask?: Mask) {
+      async newSession(mask?: Mask) {
         const session = createEmptySession();
 
         if (mask) {
@@ -321,10 +322,49 @@ export const useChatStore = createPersistStore(
           session.topic = mask.name;
         }
 
+        // 动态导入 agent store 以获取当前选中的智能体
+        try {
+          const { useAgentStore } = await import("./agent");
+          const agentStore = useAgentStore.getState();
+          session.agentId = agentStore.selectedAgentId;
+          console.log("[NewSession] 设置 agentId:", session.agentId);
+        } catch (error) {
+          console.error("[NewSession] 获取 agentId 失败:", error);
+        }
+
         set((state) => ({
           currentSessionIndex: 0,
           sessions: [session].concat(state.sessions),
         }));
+
+        // 创建后端对话记录
+        get().createBackendConversation(session);
+      },
+
+      async createBackendConversation(session: ChatSession) {
+        try {
+          const response = await fetch("/api/conversations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({
+              title: session.topic || "新对话",
+              agentId: session.agentId,
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            if (result.success && result.data.id) {
+              // 更新 session 的 id 为后端返回的 id
+              session.id = result.data.id;
+            }
+          }
+        } catch (error) {
+          console.error("创建后端对话失败:", error);
+        }
       },
 
       nextSession(delta: number) {
@@ -411,6 +451,17 @@ export const useChatStore = createPersistStore(
       ) {
         const session = get().currentSession();
         const modelConfig = session.mask.modelConfig;
+
+        console.log("[OnUserInput] session.agentId:", session.agentId);
+        console.log("[OnUserInput] session.id:", session.id);
+
+        // 检查是否使用阿里云百炼智能体
+        if (session.agentId !== undefined && session.agentId !== null) {
+          console.log("[OnUserInput] 使用智能体，调用 DashScope");
+          return get().sendToDashScope(content, session);
+        }
+
+        console.log("[OnUserInput] 未使用智能体，使用默认 API");
 
         // MCP Response no need to fill template
         let mContent: string | MultimodalContent[] = isMcpResponse
@@ -525,6 +576,171 @@ export const useChatStore = createPersistStore(
             );
           },
         });
+      },
+
+      async sendToDashScope(content: string, session: ChatSession) {
+        const userMessage: ChatMessage = createMessage({
+          role: "user",
+          content,
+        });
+
+        const botMessage: ChatMessage = createMessage({
+          role: "assistant",
+          streaming: true,
+        });
+
+        // 只先保存用户消息
+        get().updateTargetSession(session, (session) => {
+          session.messages = session.messages.concat([userMessage]);
+        });
+
+        let botMessageAdded = false;
+
+        try {
+          console.log("[DashScope] 准备发送请求到 /api/chat");
+          console.log("[DashScope] conversationId:", session.id);
+          console.log("[DashScope] message:", content);
+
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            redirect: "follow",
+            body: JSON.stringify({
+              conversationId: session.id,
+              message: content,
+              stream: true,
+            }),
+          });
+
+          console.log("[DashScope] response.status:", response.status);
+          console.log("[DashScope] response.ok:", response.ok);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error("[DashScope] 错误响应:", errorText);
+            throw new Error(
+              `HTTP error! status: ${response.status}, body: ${errorText}`,
+            );
+          }
+
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+          let accumulatedContent = "";
+
+          if (reader) {
+            console.log("[DashScope] 开始读取流数据...");
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                console.log("[DashScope] 流读取完成");
+                break;
+              }
+
+              const chunk = decoder.decode(value, { stream: true });
+              console.log("[DashScope] 收到数据块:", chunk.substring(0, 100));
+              const lines = chunk.split("\n");
+
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  const data = line.slice(6);
+                  console.log("[DashScope] 解析到数据:", data.substring(0, 50));
+
+                  if (data === "[DONE]") {
+                    console.log("[DashScope] 收到 DONE 信号");
+                    botMessage.streaming = false;
+
+                    if (botMessageAdded) {
+                      // 如果已添加，只触发更新
+                      get().updateTargetSession(session, (session) => {
+                        session.messages = session.messages.concat();
+                      });
+                    }
+                    get().onNewMessage(botMessage, session);
+                    return;
+                  }
+
+                  if (data.startsWith("[ERROR]")) {
+                    console.error("[DashScope] 收到错误:", data);
+                    botMessage.content = data;
+                    botMessage.streaming = false;
+                    botMessage.isError = true;
+
+                    if (!botMessageAdded) {
+                      // 如果还没添加，添加错误消息
+                      get().updateTargetSession(session, (session) => {
+                        session.messages = session.messages.concat([
+                          botMessage,
+                        ]);
+                      });
+                      botMessageAdded = true;
+                    } else {
+                      // 否则只触发更新
+                      get().updateTargetSession(session, (session) => {
+                        session.messages = session.messages.concat();
+                      });
+                    }
+                    return;
+                  }
+
+                  accumulatedContent += data;
+                  botMessage.content = accumulatedContent;
+                  console.log(
+                    "[DashScope] 累积内容长度:",
+                    accumulatedContent.length,
+                  );
+
+                  // 第一次收到数据时添加 bot 消息
+                  if (!botMessageAdded) {
+                    console.log("[DashScope] 第一次收到数据，添加 bot 消息");
+                    get().updateTargetSession(session, (session) => {
+                      session.messages = session.messages.concat([botMessage]);
+                    });
+                    botMessageAdded = true;
+                  } else {
+                    // 之后只触发更新，不修改数组（botMessage 对象已经在数组中）
+                    get().updateTargetSession(session, (session) => {
+                      session.messages = session.messages.concat();
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          botMessage.streaming = false;
+          botMessage.content = accumulatedContent;
+          botMessage.date = new Date().toLocaleString();
+
+          if (botMessageAdded) {
+            // 已添加，只触发更新
+            get().updateTargetSession(session, (session) => {
+              session.messages = session.messages.concat();
+            });
+          }
+          get().onNewMessage(botMessage, session);
+        } catch (error) {
+          console.error("[DashScope Chat] failed", error);
+          botMessage.content = `错误: ${
+            error instanceof Error ? error.message : "发送消息失败"
+          }`;
+          botMessage.streaming = false;
+          botMessage.isError = true;
+
+          if (!botMessageAdded) {
+            // 如果还没添加，添加错误消息
+            get().updateTargetSession(session, (session) => {
+              session.messages = session.messages.concat([botMessage]);
+            });
+          } else {
+            // 否则只触发更新
+            get().updateTargetSession(session, (session) => {
+              session.messages = session.messages.concat();
+            });
+          }
+        }
       },
 
       getMemoryPrompt() {
@@ -662,8 +878,15 @@ export const useChatStore = createPersistStore(
         refreshTitle: boolean = false,
         targetSession: ChatSession,
       ) {
-        const config = useAppConfig.getState();
         const session = targetSession;
+
+        // 如果会话使用了智能体，跳过总结（智能体有自己的会话管理）
+        if (session.agentId !== undefined && session.agentId !== null) {
+          console.log("[Summarize] 跳过智能体会话的总结");
+          return;
+        }
+
+        const config = useAppConfig.getState();
         const modelConfig = session.mask.modelConfig;
         // skip summarize when using dalle3?
         if (isDalle3(modelConfig.model)) {

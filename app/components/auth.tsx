@@ -122,6 +122,43 @@ export function AuthPage() {
           }}
         />
       </div>
+
+      <div
+        className={styles["auth-divider"]}
+        style={{ margin: "3vh 0", textAlign: "center", color: "#888" }}
+      >
+        ────── 或 ──────
+      </div>
+
+      <div className={styles["auth-actions"]}>
+        <IconButton
+          text="飞书企业登录"
+          type="primary"
+          onClick={() => {
+            window.location.href = "/api/auth/feishu/login";
+          }}
+        />
+      </div>
+
+      <div
+        className={styles["auth-divider"]}
+        style={{
+          margin: "2vh 0",
+          textAlign: "center",
+          color: "#888",
+          fontSize: "12px",
+        }}
+      >
+        开发测试
+      </div>
+      <div className={styles["auth-actions"]}>
+        <IconButton
+          text="快速登录（测试用）"
+          onClick={() => {
+            window.location.href = "/api/auth/test-login";
+          }}
+        />
+      </div>
     </div>
   );
 }
