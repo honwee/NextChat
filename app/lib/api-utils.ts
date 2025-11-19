@@ -132,10 +132,14 @@ export function withAdmin(
         email?: string;
         role: "admin" | "super_admin";
       };
+      params?: any;
     },
   ) => Promise<NextResponse>,
 ) {
-  return async (request: NextRequest): Promise<NextResponse> => {
+  return async (
+    request: NextRequest,
+    routeContext?: { params: any },
+  ): Promise<NextResponse> => {
     const user = await getCurrentUser(request);
 
     if (!user) {
@@ -153,6 +157,7 @@ export function withAdmin(
         ...user,
         role: role as "admin" | "super_admin",
       },
+      params: routeContext?.params,
     });
   };
 }

@@ -40,6 +40,13 @@ interface ChatCommands {
   clear?: Command;
   fork?: Command;
   del?: Command;
+  // 考核模式相关指令
+  exam?: Command;
+  train?: Command;
+  endexam?: Command;
+  换一批?: Command;
+  随机?: Command;
+  返回?: Command;
 }
 
 // Compatible with Chinese colon character "："

@@ -11,7 +11,6 @@ import React, {
 
 import SendWhiteIcon from "../icons/send-white.svg";
 import BrainIcon from "../icons/brain.svg";
-import RenameIcon from "../icons/rename.svg";
 import EditIcon from "../icons/rename.svg";
 import ExportIcon from "../icons/share.svg";
 import ReturnIcon from "../icons/return.svg";
@@ -25,13 +24,10 @@ import MaxIcon from "../icons/max.svg";
 import MinIcon from "../icons/min.svg";
 import ResetIcon from "../icons/reload.svg";
 import ReloadIcon from "../icons/reload.svg";
-import BreakIcon from "../icons/break.svg";
 import DeleteIcon from "../icons/clear.svg";
-import PinIcon from "../icons/pin.svg";
 import ConfirmIcon from "../icons/confirm.svg";
 import CloseIcon from "../icons/close.svg";
 import CancelIcon from "../icons/cancel.svg";
-import ImageIcon from "../icons/image.svg";
 
 import LightIcon from "../icons/light.svg";
 import DarkIcon from "../icons/dark.svg";
@@ -592,6 +588,13 @@ export function ChatActions(props: {
   return (
     <div className={styles["chat-input-actions"]}>
       <>
+        {/* 快捷指令按钮 - 放在第一位 */}
+        <ChatAction
+          onClick={props.showPromptHints}
+          text={Locale.Chat.InputActions.Prompt}
+          icon={<PromptIcon />}
+        />
+
         {couldStop && (
           <ChatAction
             onClick={stopAll}
@@ -615,13 +618,14 @@ export function ChatActions(props: {
           />
         )} */}
 
-        {showUploadImage && (
+        {/* 隐藏上传图片按钮 - 面试训练系统不需要 */}
+        {/* {showUploadImage && (
           <ChatAction
             onClick={props.uploadImage}
             text={Locale.Chat.InputActions.UploadImage}
             icon={props.uploading ? <LoadingButtonIcon /> : <ImageIcon />}
           />
-        )}
+        )} */}
         <ChatAction
           onClick={nextTheme}
           text={Locale.Chat.InputActions.Theme[theme]}
@@ -638,12 +642,6 @@ export function ChatActions(props: {
           }
         />
 
-        <ChatAction
-          onClick={props.showPromptHints}
-          text={Locale.Chat.InputActions.Prompt}
-          icon={<PromptIcon />}
-        />
-
         {/* 隐藏所有面具按钮 - 面试训练系统不需要 */}
         {/* <ChatAction
           onClick={() => {
@@ -653,7 +651,8 @@ export function ChatActions(props: {
           icon={<MaskIcon />}
         /> */}
 
-        <ChatAction
+        {/* 隐藏清除上下文按钮 - 面试训练系统不需要 */}
+        {/* <ChatAction
           text={Locale.Chat.InputActions.Clear}
           icon={<BreakIcon />}
           onClick={() => {
@@ -666,7 +665,7 @@ export function ChatActions(props: {
               }
             });
           }}
-        />
+        /> */}
 
         {/* 隐藏模型选择器按钮 - 面试训练系统固定使用百炼智能体 */}
         {/* <ChatAction
@@ -1077,6 +1076,40 @@ function _Chat() {
       ),
     fork: () => chatStore.forkSession(),
     del: () => chatStore.deleteSession(chatStore.currentSessionIndex),
+    // 考核模式相关指令
+    exam: (input) => {
+      // 提取岗位名称，例如 ":exam 运营" -> "运营"
+      const match = input.match(/^[:：]exam\s+(.+)/);
+      const jobName = match ? match[1].trim() : "";
+      const message = `/exam ${jobName}`;
+      chatStore.onUserInput(message);
+      setUserInput("");
+    },
+    train: () => {
+      const message = "/train";
+      chatStore.onUserInput(message);
+      setUserInput("");
+    },
+    endexam: () => {
+      const message = "结束考核";
+      chatStore.onUserInput(message);
+      setUserInput("");
+    },
+    换一批: () => {
+      const message = "换一批";
+      chatStore.onUserInput(message);
+      setUserInput("");
+    },
+    随机: () => {
+      const message = "随机";
+      chatStore.onUserInput(message);
+      setUserInput("");
+    },
+    返回: () => {
+      const message = "返回";
+      chatStore.onUserInput(message);
+      setUserInput("");
+    },
   });
 
   // only search prompts when user input is short
@@ -1721,7 +1754,8 @@ function _Chat() {
                 }}
               />
             </div>
-            {!isMobileScreen && (
+            {/* 隐藏编辑消息记录按钮 - 面试训练系统不需要 */}
+            {/* {!isMobileScreen && (
               <div className="window-action-button">
                 <IconButton
                   icon={<RenameIcon />}
@@ -1731,7 +1765,7 @@ function _Chat() {
                   onClick={() => setIsEditingMessage(true)}
                 />
               </div>
-            )}
+            )} */}
             <div className="window-action-button">
               <IconButton
                 icon={<ExportIcon />}
@@ -1896,11 +1930,12 @@ function _Chat() {
                                         }
                                       />
 
-                                      <ChatAction
+                                      {/* 隐藏固定按钮 - 面试训练系统不需要 */}
+                                      {/* <ChatAction
                                         text={Locale.Chat.Actions.Pin}
                                         icon={<PinIcon />}
                                         onClick={() => onPinMessage(message)}
-                                      />
+                                      /> */}
                                       <ChatAction
                                         text={Locale.Chat.Actions.Copy}
                                         icon={<CopyIcon />}

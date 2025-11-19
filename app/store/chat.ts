@@ -125,7 +125,13 @@ function createEmptySession(): ChatSession {
 function getSummarizeModel(
   currentModel: string,
   providerName: string,
+  agentId?: string | null,
 ): string[] {
+  // 如果是智能体会话,强制使用 Qwen API 生成标题
+  if (agentId !== undefined && agentId !== null) {
+    return ["qwen-long", "Alibaba"];
+  }
+
   // if it is using gpt-* models, force to use 4o-mini to summarize
   if (currentModel.startsWith("gpt") || currentModel.startsWith("chatgpt")) {
     const configStore = useAppConfig.getState();
@@ -620,14 +626,23 @@ export const useChatStore = createPersistStore(
         const botMessage: ChatMessage = createMessage({
           role: "assistant",
           streaming: true,
+          content: "", // 初始化为空内容
         });
 
-        // 只先保存用户消息
+        // 同时保存用户消息和 bot 消息(显示 "思考中" 状态)
         get().updateTargetSession(session, (session) => {
-          session.messages = session.messages.concat([userMessage]);
+          session.messages = session.messages.concat([userMessage, botMessage]);
         });
 
-        let botMessageAdded = false;
+        // 创建 AbortController 用于停止请求
+        const abortController = new AbortController();
+
+        // 将 controller 添加到池中
+        ChatControllerPool.addController(
+          session.id,
+          botMessage.id,
+          abortController,
+        );
 
         try {
           console.log("[DashScope] 准备发送请求到 /api/chat");
@@ -641,6 +656,7 @@ export const useChatStore = createPersistStore(
             },
             credentials: "include",
             redirect: "follow",
+            signal: abortController.signal, // 添加 abort signal
             body: JSON.stringify({
               conversationId: session.id,
               message: content,
@@ -678,20 +694,30 @@ export const useChatStore = createPersistStore(
 
               for (const line of lines) {
                 if (line.startsWith("data: ")) {
-                  const data = line.slice(6);
+                  let data = line.slice(6);
                   console.log("[DashScope] 解析到数据:", data.substring(0, 50));
 
                   if (data === "[DONE]") {
                     console.log("[DashScope] 收到 DONE 信号");
+                    console.log(
+                      "[DashScope] 最终累积内容:",
+                      accumulatedContent,
+                    );
+                    console.log(
+                      "[DashScope] 包含换行符数量:",
+                      (accumulatedContent.match(/\n/g) || []).length,
+                    );
                     botMessage.streaming = false;
 
-                    if (botMessageAdded) {
-                      // 如果已添加，只触发更新
-                      get().updateTargetSession(session, (session) => {
-                        session.messages = session.messages.concat();
-                      });
-                    }
+                    // 触发更新
+                    get().updateTargetSession(session, (session) => {
+                      session.messages = session.messages.concat();
+                    });
+
                     get().onNewMessage(botMessage, session);
+
+                    // 从 ChatControllerPool 移除 controller
+                    ChatControllerPool.remove(session.id, botMessage.id);
                     return;
                   }
 
@@ -701,21 +727,21 @@ export const useChatStore = createPersistStore(
                     botMessage.streaming = false;
                     botMessage.isError = true;
 
-                    if (!botMessageAdded) {
-                      // 如果还没添加，添加错误消息
-                      get().updateTargetSession(session, (session) => {
-                        session.messages = session.messages.concat([
-                          botMessage,
-                        ]);
-                      });
-                      botMessageAdded = true;
-                    } else {
-                      // 否则只触发更新
-                      get().updateTargetSession(session, (session) => {
-                        session.messages = session.messages.concat();
-                      });
-                    }
+                    // 只触发更新
+                    get().updateTargetSession(session, (session) => {
+                      session.messages = session.messages.concat();
+                    });
+
+                    // 从 ChatControllerPool 移除 controller
+                    ChatControllerPool.remove(session.id, botMessage.id);
                     return;
+                  }
+
+                  // 尝试解析 JSON（如果后端使用了 JSON.stringify）
+                  try {
+                    data = JSON.parse(data);
+                  } catch (e) {
+                    // 如果不是 JSON，保持原样
                   }
 
                   accumulatedContent += data;
@@ -725,19 +751,10 @@ export const useChatStore = createPersistStore(
                     accumulatedContent.length,
                   );
 
-                  // 第一次收到数据时添加 bot 消息
-                  if (!botMessageAdded) {
-                    console.log("[DashScope] 第一次收到数据，添加 bot 消息");
-                    get().updateTargetSession(session, (session) => {
-                      session.messages = session.messages.concat([botMessage]);
-                    });
-                    botMessageAdded = true;
-                  } else {
-                    // 之后只触发更新，不修改数组（botMessage 对象已经在数组中）
-                    get().updateTargetSession(session, (session) => {
-                      session.messages = session.messages.concat();
-                    });
-                  }
+                  // 只触发更新，不修改数组（botMessage 对象已经在数组中）
+                  get().updateTargetSession(session, (session) => {
+                    session.messages = session.messages.concat();
+                  });
                 }
               }
             }
@@ -747,32 +764,41 @@ export const useChatStore = createPersistStore(
           botMessage.content = accumulatedContent;
           botMessage.date = new Date().toLocaleString();
 
-          if (botMessageAdded) {
-            // 已添加，只触发更新
-            get().updateTargetSession(session, (session) => {
-              session.messages = session.messages.concat();
-            });
-          }
+          // 触发更新
+          get().updateTargetSession(session, (session) => {
+            session.messages = session.messages.concat();
+          });
+
           get().onNewMessage(botMessage, session);
+
+          // 从 ChatControllerPool 移除 controller
+          ChatControllerPool.remove(session.id, botMessage.id);
         } catch (error) {
           console.error("[DashScope Chat] failed", error);
-          botMessage.content = `错误: ${
-            error instanceof Error ? error.message : "发送消息失败"
-          }`;
-          botMessage.streaming = false;
-          botMessage.isError = true;
 
-          if (!botMessageAdded) {
-            // 如果还没添加，添加错误消息
-            get().updateTargetSession(session, (session) => {
-              session.messages = session.messages.concat([botMessage]);
-            });
+          // 检查是否是用户中止
+          const isAborted =
+            error instanceof Error && error.name === "AbortError";
+
+          if (isAborted) {
+            console.log("[DashScope] 用户中止了请求");
+            botMessage.content = "已停止生成";
           } else {
-            // 否则只触发更新
-            get().updateTargetSession(session, (session) => {
-              session.messages = session.messages.concat();
-            });
+            botMessage.content = `错误: ${
+              error instanceof Error ? error.message : "发送消息失败"
+            }`;
           }
+
+          botMessage.streaming = false;
+          botMessage.isError = !isAborted;
+
+          // 只触发更新
+          get().updateTargetSession(session, (session) => {
+            session.messages = session.messages.concat();
+          });
+
+          // 从 ChatControllerPool 移除 controller
+          ChatControllerPool.remove(session.id, botMessage.id);
         }
       },
 
@@ -913,11 +939,12 @@ export const useChatStore = createPersistStore(
       ) {
         const session = targetSession;
 
-        // 如果会话使用了智能体，跳过总结（智能体有自己的会话管理）
-        if (session.agentId !== undefined && session.agentId !== null) {
-          console.log("[Summarize] 跳过智能体会话的总结");
-          return;
-        }
+        // 面试训练系统：智能体会话也需要自动生成标题
+        // 注释掉原来跳过智能体会话的逻辑
+        // if (session.agentId !== undefined && session.agentId !== null) {
+        //   console.log("[Summarize] 跳过智能体会话的总结");
+        //   return;
+        // }
 
         const config = useAppConfig.getState();
         const modelConfig = session.mask.modelConfig;
@@ -932,6 +959,7 @@ export const useChatStore = createPersistStore(
           : getSummarizeModel(
               session.mask.modelConfig.model,
               session.mask.modelConfig.providerName,
+              session.agentId, // 传入 agentId 用于判断是否使用 Qwen API
             );
         const api: ClientApi = getClientApi(providerName as ServiceProvider);
 

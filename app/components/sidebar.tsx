@@ -3,12 +3,12 @@ import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./home.module.scss";
 
 import { IconButton } from "./button";
-import SettingsIcon from "../icons/settings.svg";
 import ChatGptIcon from "../icons/chatgpt.svg";
 import AddIcon from "../icons/add.svg";
 import DeleteIcon from "../icons/delete.svg";
 import McpIcon from "../icons/mcp.svg";
 import DragIcon from "../icons/drag.svg";
+import MaskIcon from "../icons/mask.svg";
 
 import Locale from "../locales";
 
@@ -22,10 +22,10 @@ import {
   Path,
 } from "../constant";
 
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { isIOS, useMobileScreen } from "../utils";
 import dynamic from "next/dynamic";
-import { Selector, showConfirm } from "./ui-lib";
+import { Selector, showConfirm, showToast } from "./ui-lib";
 import clsx from "clsx";
 import { isMcpEnabled } from "../mcp/actions";
 
@@ -228,6 +228,7 @@ export function SideBar(props: { className?: string }) {
   const config = useAppConfig();
   const chatStore = useChatStore();
   const [mcpEnabled, setMcpEnabled] = useState(false);
+  const [userName, setUserName] = useState<string | null>(null);
 
   useEffect(() => {
     // 检查 MCP 是否启用
@@ -237,7 +238,40 @@ export function SideBar(props: { className?: string }) {
       console.log("[SideBar] MCP enabled:", enabled);
     };
     checkMcpStatus();
+
+    // 获取用户信息
+    const fetchUserInfo = async () => {
+      try {
+        const response = await fetch("/api/auth/me");
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            setUserName(result.data.name || result.data.email);
+          }
+        }
+      } catch (error) {
+        console.error("[SideBar] Failed to fetch user info:", error);
+      }
+    };
+    fetchUserInfo();
   }, []);
+
+  const handleLogout = async () => {
+    if (await showConfirm("确定要退出登录吗？")) {
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+        showToast("退出成功");
+        // 清空本地存储
+        localStorage.clear();
+        sessionStorage.clear();
+        // 跳转到登录页
+        window.location.href = "/";
+      } catch (error) {
+        console.error("[SideBar] Logout failed:", error);
+        showToast("退出失败");
+      }
+    }
+  };
 
   return (
     <SideBarContainer
@@ -246,8 +280,8 @@ export function SideBar(props: { className?: string }) {
       {...props}
     >
       <SideBarHeader
-        title="NextChat"
-        subTitle="Build your own AI assistant."
+        title="LumiChat"
+        subTitle="面试训练智能助手"
         logo={<ChatGptIcon />}
         shouldNarrow={shouldNarrow}
       >
@@ -326,13 +360,13 @@ export function SideBar(props: { className?: string }) {
               />
             </div>
             <div className={styles["sidebar-action"]}>
-              <Link to={Path.Settings}>
-                <IconButton
-                  aria={Locale.Settings.Title}
-                  icon={<SettingsIcon />}
-                  shadow
-                />
-              </Link>
+              <IconButton
+                aria={userName || "用户"}
+                text={shouldNarrow ? undefined : userName || "用户"}
+                icon={<MaskIcon />}
+                onClick={handleLogout}
+                shadow
+              />
             </div>
             {/* 隐藏GitHub按钮 - 面试训练系统不需要 */}
             {/* <div className={styles["sidebar-action"]}>
@@ -351,12 +385,9 @@ export function SideBar(props: { className?: string }) {
             icon={<AddIcon />}
             text={shouldNarrow ? undefined : Locale.Home.NewChat}
             onClick={() => {
-              if (config.dontShowMaskSplashScreen) {
-                chatStore.newSession();
-                navigate(Path.Chat);
-              } else {
-                navigate(Path.NewChat);
-              }
+              // 直接创建新会话并跳转到聊天页面
+              chatStore.newSession();
+              navigate(Path.Chat);
             }}
             shadow
           />

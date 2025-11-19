@@ -27,19 +27,20 @@ export const GET = withAdmin(async (request: NextRequest, { user }) => {
       conversations = await db.getAllConversations(limit, offset);
     }
 
-    // 获取每个对话的用户信息
-    const conversationsWithUsers = await Promise.all(
+    // 获取每个对话的用户信息和消息数量
+    const conversationsWithDetails = await Promise.all(
       conversations.map(async (conv) => {
         const u = await db.getUserById(conv.user_id);
+        const messages = await db.getMessagesByConversationId(conv.id);
+        const agent = conv.agent_id
+          ? await db.getAgentById(conv.agent_id)
+          : null;
+
         return {
           ...conv,
-          user: u
-            ? {
-                id: u.id,
-                name: u.name,
-                email: u.email,
-              }
-            : null,
+          user_name: u?.name || "未知用户",
+          agent_name: agent?.name || null,
+          message_count: messages.length,
         };
       }),
     );
@@ -47,7 +48,7 @@ export const GET = withAdmin(async (request: NextRequest, { user }) => {
     const total = await db.getConversationCount();
 
     return successResponse({
-      conversations: conversationsWithUsers,
+      conversations: conversationsWithDetails,
       total,
       limit,
       offset,

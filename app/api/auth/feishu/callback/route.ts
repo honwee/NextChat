@@ -43,8 +43,8 @@ export async function GET(request: NextRequest) {
       user = await db.createUser({
         feishu_user_id: userInfo.union_id,
         name: userInfo.name,
-        email: userInfo.email || null,
-        avatar_url: userInfo.picture || null,
+        email: userInfo.email || undefined,
+        avatar_url: userInfo.picture || undefined,
         is_active: true,
       });
 
@@ -57,8 +57,8 @@ export async function GET(request: NextRequest) {
       // 更新用户信息
       const updatedUser = await db.updateUser(user.id, {
         name: userInfo.name,
-        email: userInfo.email || null,
-        avatar_url: userInfo.picture || null,
+        email: userInfo.email || undefined,
+        avatar_url: userInfo.picture || undefined,
       });
 
       if (updatedUser) {

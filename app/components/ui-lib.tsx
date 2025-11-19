@@ -10,7 +10,8 @@ import CancelIcon from "../icons/cancel.svg";
 import MaxIcon from "../icons/max.svg";
 import MinIcon from "../icons/min.svg";
 
-import Locale from "../locales";
+// Avoid top-level import of Locale to break circular deps
+const loadLocale = () => import("../locales").then((m) => m.default);
 
 import { createRoot } from "react-dom/client";
 import React, {
@@ -23,7 +24,6 @@ import React, {
   useRef,
 } from "react";
 import { IconButton } from "./button";
-import { Avatar } from "./emoji";
 import clsx from "clsx";
 
 export function Popover(props: {
@@ -332,7 +332,8 @@ export function showConfirm(content: any) {
     div.remove();
   };
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean>(async (resolve) => {
+    const Locale = await loadLocale();
     root.render(
       <Modal
         title={Locale.UI.Confirm}
@@ -405,8 +406,9 @@ export function showPrompt(content: any, value = "", rows = 3) {
     div.remove();
   };
 
-  return new Promise<string>((resolve) => {
+  return new Promise<string>(async (resolve) => {
     let userInput = value;
+    const Locale = await loadLocale();
 
     root.render(
       <Modal
@@ -455,23 +457,25 @@ export function showImageModal(
   style?: CSSProperties,
   boxStyle?: CSSProperties,
 ) {
-  showModal({
-    title: Locale.Export.Image.Modal,
-    defaultMax: defaultMax,
-    children: (
-      <div style={{ display: "flex", justifyContent: "center", ...boxStyle }}>
-        <img
-          src={img}
-          alt="preview"
-          style={
-            style ?? {
-              maxWidth: "100%",
+  loadLocale().then((Locale) =>
+    showModal({
+      title: Locale.Export.Image.Modal,
+      defaultMax: defaultMax,
+      children: (
+        <div style={{ display: "flex", justifyContent: "center", ...boxStyle }}>
+          <img
+            src={img}
+            alt="preview"
+            style={
+              style ?? {
+                maxWidth: "100%",
+              }
             }
-          }
-        ></img>
-      </div>
-    ),
-  });
+          ></img>
+        </div>
+      ),
+    }),
+  );
 }
 
 export function Selector<T>(props: {
@@ -486,6 +490,25 @@ export function Selector<T>(props: {
   onClose?: () => void;
   multiple?: boolean;
 }) {
+  // Lazy-load Avatar to avoid pulling heavy store dependencies at module load time
+  function LazyAvatar(props: { model?: string; avatar?: string }) {
+    const [Comp, setComp] = useState<null | React.ComponentType<any>>(null);
+    useEffect(() => {
+      let mounted = true;
+      import("./emoji")
+        .then((mod) => {
+          if (mounted) setComp(() => mod.Avatar);
+        })
+        .catch(() => {
+          // ignore load error, show nothing
+        });
+      return () => {
+        mounted = false;
+      };
+    }, []);
+    return Comp ? <Comp {...props} /> : null;
+  }
+
   const [selectedValues, setSelectedValues] = useState<T[]>(
     Array.isArray(props.defaultSelectedValue)
       ? props.defaultSelectedValue
@@ -523,7 +546,7 @@ export function Selector<T>(props: {
                 key={i}
                 title={item.title}
                 subTitle={item.subTitle}
-                icon={<Avatar model={item.value as string} />}
+                icon={<LazyAvatar model={item.value as string} />}
                 onClick={(e) => {
                   if (item.disable) {
                     e.stopPropagation();

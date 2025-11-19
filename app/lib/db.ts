@@ -3,7 +3,7 @@
  * 使用 pg 库直接连接 Supabase PostgreSQL 数据库
  */
 
-import { Pool, PoolClient, QueryResult } from "pg";
+import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
 // 数据库类型定义
 export interface User {
@@ -13,8 +13,11 @@ export interface User {
   email: string | null;
   avatar_url: string | null;
   is_active: boolean;
+  // 用户密码哈希（可能为空，表示未设置密码）
+  password_hash: string | null;
   created_at: Date;
   updated_at: Date;
+  [key: string]: any;
 }
 
 export interface Admin {
@@ -22,6 +25,7 @@ export interface Admin {
   user_id: string;
   role: "admin" | "super_admin";
   created_at: Date;
+  [key: string]: any;
 }
 
 export interface Session {
@@ -30,6 +34,7 @@ export interface Session {
   jwt_token: string;
   expires_at: Date;
   created_at: Date;
+  [key: string]: any;
 }
 
 export interface Agent {
@@ -42,6 +47,7 @@ export interface Agent {
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
+  [key: string]: any;
 }
 
 export interface Conversation {
@@ -53,6 +59,7 @@ export interface Conversation {
   is_deleted: boolean;
   created_at: Date;
   updated_at: Date;
+  [key: string]: any;
 }
 
 export interface Message {
@@ -62,6 +69,7 @@ export interface Message {
   content: string;
   tokens: number | null;
   created_at: Date;
+  [key: string]: any;
 }
 
 export interface FeishuConfig {
@@ -72,6 +80,7 @@ export interface FeishuConfig {
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
+  [key: string]: any;
 }
 
 export interface SystemConfig {
@@ -81,6 +90,7 @@ export interface SystemConfig {
   description: string | null;
   created_at: Date;
   updated_at: Date;
+  [key: string]: any;
 }
 
 // 数据库连接池配置
@@ -119,7 +129,7 @@ export function getPool(): Pool {
 /**
  * 执行 SQL 查询
  */
-export async function query<T = any>(
+export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
@@ -165,17 +175,19 @@ export class DatabaseService {
     name?: string;
     email?: string;
     avatar_url?: string;
+    password_hash?: string | null;
   }): Promise<User | null> {
     try {
       const result = await query<User>(
-        `INSERT INTO users (feishu_user_id, name, email, avatar_url)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO users (feishu_user_id, name, email, avatar_url, password_hash)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING *`,
         [
           data.feishu_user_id,
           data.name || null,
           data.email || null,
           data.avatar_url || null,
+          data.password_hash || null,
         ],
       );
       return result.rows[0] || null;
@@ -207,6 +219,41 @@ export class DatabaseService {
     } catch (error) {
       console.error("获取用户失败:", error);
       return null;
+    }
+  }
+
+  async getUserByEmailOrUsername(
+    emailOrUsername: string,
+  ): Promise<User | null> {
+    try {
+      const result = await query<User>(
+        `SELECT *
+         FROM users
+         WHERE email = $1 OR name = $1
+         ORDER BY (password_hash IS NULL) ASC, updated_at DESC
+         LIMIT 1`,
+        [emailOrUsername],
+      );
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error("获取用户失败:", error);
+      return null;
+    }
+  }
+
+  async updateUserPassword(
+    userId: string,
+    passwordHash: string,
+  ): Promise<boolean> {
+    try {
+      await query(
+        "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+        [passwordHash, userId],
+      );
+      return true;
+    } catch (error) {
+      console.error("更新用户密码失败:", error);
+      return false;
     }
   }
 

@@ -129,7 +129,8 @@ export const POST = withAuth(async (request: NextRequest, { user }) => {
 
               if (event.event === "message" && event.data) {
                 assistantMessage += event.data;
-                const sseData = `data: ${event.data}\n\n`;
+                // 使用 JSON 编码来保护换行符
+                const sseData = `data: ${JSON.stringify(event.data)}\n\n`;
                 console.log(
                   "[Chat API] 发送 SSE 数据:",
                   sseData.substring(0, 100),
